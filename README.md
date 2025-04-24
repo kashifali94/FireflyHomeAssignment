@@ -29,5 +29,13 @@ Ensure you have the following installed:
 
 To build the application and its test binaries:
 
-```bash
-make build
+### Step to run
+- Clone the Repo
+- Cd into Savannahtakehomeassi Directory
+- Run make build command to build the go binary
+- Run make build test-binaries command to build the test cases binaries
+- Run docker-compose up --build -d command to up the enviorment. It will create images and appropiate volumes
+- Once everything is running. Run docker exec -it drift-checker /bin/sh to get into the container.
+- Wait for few seconds to Run ./drift-checker command inside the drift  checker container. Terraform takes time few seconds to create the instance.
+- CD into to the test-binaries directory. Now run test binary by adding ./ before binary you  will see the coverage of the test cases.
+
