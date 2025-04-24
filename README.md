@@ -30,13 +30,13 @@ To build the application and its test binaries:
 
 ### Step to run and installation
 - Clone the Repo
-- Cd into Savannahtakehomeassi Directory
-- Run make build command to build the go binary
-- Run make build test-binaries command to build the test cases binaries
-- Run docker-compose up --build -d command to up the enviorment. It will create images and appropiate volumes
-- Once everything is running. Run docker exec -it drift-checker /bin/sh to get into the container.
-- Wait for few seconds to Run ./drift-checker command inside the drift  checker container. Terraform takes time few seconds to create the instance.
-- CD into to the test-binaries directory. Now run test binary by adding ./ before binary you  will see the coverage of the test cases.
+- **Cd** into **Savannahtakehomeassi** Directory
+- Run **make build** command to build the go binary
+- Run **make build test-binaries** command to build the test cases binaries
+- Run **docker-compose up --build -d** command to up the enviorment. It will create images and appropiate volumes
+- Once everything is running. Run **docker exec -it drift-checker /bin/sh** to get into the container.
+- Wait for few seconds to Run **./drift-checker** command inside the drift  checker container. Terraform takes time few seconds to create the instance.
+- **Cd** into to the **test-binaries** directory. Now run test binary by adding **./** before binary you will see the coverage of the test cases.
 
 ### Design decisions and trade-offs
 - Leveraged interfaces to enable mock implementations of AWS clients for effective and isolated unit testing.
