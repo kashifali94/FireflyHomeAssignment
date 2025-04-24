@@ -1,0 +1,9 @@
+terraform/
+.dockerignore
+.git
+.terraform/
+*.tfstate
+*.tfvars
+*.log
+.teraform-test/
+.localstack/
