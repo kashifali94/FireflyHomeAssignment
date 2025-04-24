@@ -58,7 +58,6 @@ To build the application and its test binaries:
   
 
 ### Sample input Terraform configuration
-<details>
 ```hcl
 provider "aws" {
   access_key = "test"
@@ -92,11 +91,11 @@ terraform {
     path = "tfdata/terraform.tfstate"
   }
 }
-</details>
+```
 
 
 ### Sample AWS EC2 response (or mock data)
-<details>
+```json
 {
     "Reservations": [
         {
@@ -199,7 +198,7 @@ terraform {
         }
     ]
 }
-</details>
+```
 
 
 
