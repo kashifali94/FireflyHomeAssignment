@@ -31,6 +31,7 @@ To build the application and its test binaries:
 ### Step to run and installation
 - Clone the Repo
 - **Cd** into **Savannahtakehomeassi** Directory
+- Run **go mod tidy** if you see any dependency related issue. 
 - Run **make build** command to build the go binary
 - Run **make build test-binaries** command to build the test cases binaries
 - Run **docker-compose up --build -d** command to up the enviorment. It will create images and appropiate volumes
