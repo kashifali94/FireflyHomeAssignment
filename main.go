@@ -1,105 +1,104 @@
 package main
 
 import (
+	awsm "Savannahtakehomeassi/awsd/models"
 	"context"
-	"log"
+	"fmt"
+	"go.uber.org/zap"
 	"os"
 	"os/signal"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/spf13/viper"
-
 	"Savannahtakehomeassi/awsd"
 	"Savannahtakehomeassi/configuration"
 	"Savannahtakehomeassi/driftChecker"
+	"Savannahtakehomeassi/logger"
 	"Savannahtakehomeassi/teraform"
 )
 
-func main() {
-	// Configure logger with timestamps
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-
-	// Initialize configuration
-	configuration.Initialize()
-
-	tfPath := viper.GetString("TFSTATE_PATH")
-	maintfPath := viper.GetString("MAINTF_PATH")
-	interval := viper.GetInt("CHECK_INTERVAL_MINUTES")
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Listen for SIGINT/SIGTERM
-	go func() {
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-		<-c
-		log.Println("Received shutdown signal. Stopping drift checker...")
-		cancel()
-	}()
-
-	log.Printf("⏳ Starting drift checker every %d seconds(s)...\n", interval)
-	runLoop(ctx, tfPath, maintfPath, interval)
+type DriftService struct {
+	awsClient *awsd.AwsClient
+	config    *configuration.Config
 }
 
-func runLoop(ctx context.Context, tfPath, maintfPath string, interval int) {
-	ticker := time.NewTicker(time.Duration(interval) * time.Second)
+func NewDriftService(config *configuration.Config) (*DriftService, error) {
+	awsClient, err := awsd.NewEC2Client()
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AWS client: %w", err)
+	}
+
+	return &DriftService{
+		awsClient: awsClient,
+		config:    config,
+	}, nil
+}
+
+func (s *DriftService) Start(ctx context.Context) error {
+	ticker := time.NewTicker(s.config.CheckInterval)
+
 	defer ticker.Stop()
 
 	// First run immediately
-	runDriftCheck(tfPath, maintfPath)
+	if err := s.runDriftCheck(); err != nil {
+		logger.Error("Error in initial drift check", zap.Error(err))
+	}
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("Drift checker shutdown complete.")
-			return
+			logger.Info("Drift checker shutdown complete")
+			return nil
 		case <-ticker.C:
-			runDriftCheck(tfPath, maintfPath)
+			if err := s.runDriftCheck(); err != nil {
+				logger.Error("Error in drift check", zap.Error(err))
+			}
 		}
 	}
 }
 
-func runDriftCheck(tfPath, maintfPath string) {
-	log.Println("Starting drift check...")
+func (s *DriftService) runDriftCheck() error {
+	logger.Info("Starting drift check")
 
-	// Initialize AWS client
-	awsClient, err := awsd.NewEC2Client()
-	if err != nil {
-		log.Fatalf("Failed to create AWS client: %v\n", err)
-		return
+	// Fetch AWS instance with retry
+	var awsInst *awsm.AWSInstance
+	var err error
+	for i := 0; i < s.config.MaxRetries; i++ {
+		awsInst, err = awsd.GetAWSInstance(s.awsClient)
+		if err == nil {
+			break
+		}
+		if i < s.config.MaxRetries-1 {
+			logger.Warn("Failed to fetch AWS instance, retrying",
+				zap.Int("attempt", i+1),
+				zap.Int("max_attempts", s.config.MaxRetries),
+				zap.Error(err))
+			time.Sleep(s.config.RetryDelay)
+		}
 	}
-
-	// Fetch AWS instance
-	awsInst, err := awsd.GetAWSInstance(awsClient)
 	if err != nil {
-		log.Fatalf("Failed to fetch AWS instance: %v\n", err)
-		return
+		return fmt.Errorf("failed to fetch AWS instance after %d attempts: %w", s.config.MaxRetries, err)
 	}
 
 	// Parse Terraform state
-	tfInst, err := teraform.ParseTerraformInstance(tfPath)
+	tfInst, err := teraform.ParseTerraformInstance(s.config.TFStatePath)
 	if err != nil {
-		log.Fatalf("Failed to parse Terraform state: %v\n", err)
-		return
+		return fmt.Errorf("failed to parse Terraform state: %w", err)
 	}
 
 	// Parse HCL config
-	tfinstance, err := teraform.ParseHCLConfig(maintfPath)
+	tfinstance, err := teraform.ParseHCLConfig(s.config.MainTFPath)
 	if err != nil {
-		log.Fatalf("Failed to parse HCL config: %v\n", err)
-		return
+		return fmt.Errorf("failed to parse HCL config: %w", err)
 	}
 
 	// Create channels for drift comparison results and errors
-	driftChannel := make(chan []string, 2) // For drift results
-	errorChannel := make(chan error, 2)    // For errors
+	driftChannel := make(chan []string, 2)
+	errorChannel := make(chan error, 2)
 
-	// Create a wait group for synchronization
 	var wg sync.WaitGroup
-	wg.Add(2) // Two drift checks
+	wg.Add(2)
 
 	// Drift check with Terraform state comparison
 	go func() {
@@ -130,7 +129,7 @@ func runDriftCheck(tfPath, maintfPath string) {
 
 	// Handle errors from drift checks
 	for err := range errorChannel {
-		log.Printf("Error during drift check: %v\n", err)
+		logger.Error("Error during drift check", zap.Error(err))
 	}
 
 	// Collect and print drift results from both channels
@@ -142,14 +141,58 @@ func runDriftCheck(tfPath, maintfPath string) {
 	// Print results for both drift checks
 	for _, drift := range driftResults {
 		if len(drift) == 1 && drift[0] == "No drift detected between AWS instance and Terraform state." {
-			log.Println("No drift detected between AWS and Terraform.")
+			logger.Info("No drift detected between AWS and Terraform")
 		} else {
-			log.Println("Drift detected between AWS and Terraform:")
+			logger.Info("Drift detected between AWS and Terraform")
 			for i, d := range drift {
-				log.Printf("  %d. %s\n", i+1, d)
+				logger.Info(fmt.Sprintf("  %d. %s", i+1, d))
 			}
 		}
 	}
 
-	log.Println("Drift check completed.")
+	logger.Info("Drift check completed")
+	return nil
+}
+
+func main() {
+	// Initialize configuration
+	config, err := configuration.Initialize()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize configuration: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Initialize logger
+	if err := logger.Initialize(config.LogLevel); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
+		os.Exit(1)
+	}
+	defer logger.Sync()
+
+	// Create drift service
+	service, err := NewDriftService(config)
+	if err != nil {
+		logger.Fatal("Failed to create drift service", zap.Error(err))
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Listen for SIGINT/SIGTERM
+	go func() {
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+		<-c
+		logger.Info("Received shutdown signal. Stopping drift checker...")
+		cancel()
+	}()
+
+	logger.Info("Starting drift checker",
+		zap.Duration("interval", config.CheckInterval),
+		zap.String("tf_state_path", config.TFStatePath),
+		zap.String("main_tf_path", config.MainTFPath))
+
+	if err := service.Start(ctx); err != nil {
+		logger.Error("Drift service stopped with error", zap.Error(err))
+	}
 }
