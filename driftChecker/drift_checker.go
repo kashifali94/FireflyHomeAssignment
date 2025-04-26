@@ -1,6 +1,7 @@
 package driftChecker
 
 import (
+	"Savannahtakehomeassi/logger"
 	"fmt"
 	"log"
 	"reflect"
@@ -16,45 +17,30 @@ func CompareAWSInstanceWithTerraform(awsInstance *awsm.AWSInstance, tfState *ter
 	var driftDetected []string
 	var wg sync.WaitGroup
 
-	fmt.Println("drift checker started")
+	logger.Info("Drift checker started")
 
 	tfInstance := findMatchingTFInstance(tfState)
 	if tfInstance == nil {
 		return nil, fmt.Errorf("no matching Terraform instance found for AWS instance %s", awsInstance.InstanceID)
 	}
 
-	// All comparisons in goroutines
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	// Launch comparison routines using the helper
+	runComparison(&wg, driftCh, func() {
 		compareBasicFields(awsInstance, tfInstance, driftCh)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	runComparison(&wg, driftCh, func() {
 		compareTags(awsInstance, tfInstance, driftCh)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	runComparison(&wg, driftCh, func() {
 		compareBlockDevices(awsInstance, tfInstance, driftCh)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	runComparison(&wg, driftCh, func() {
 		compareSecurityGroups(awsInstance, tfInstance, driftCh)
-	}()
-
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	})
+	runComparison(&wg, driftCh, func() {
 		compareNetworkInterfaces(awsInstance, tfInstance, driftCh)
-	}()
+	})
 
-	// Close the channel after all comparisons are done
 	go func() {
 		wg.Wait()
 		close(driftCh)
@@ -69,6 +55,15 @@ func CompareAWSInstanceWithTerraform(awsInstance *awsm.AWSInstance, tfState *ter
 	}
 
 	return driftDetected, nil
+}
+
+// generic function to launch goroutine safely
+func runComparison(wg *sync.WaitGroup, ch chan<- string, fn func()) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		fn()
+	}()
 }
 
 func findMatchingTFInstance(tfState *terafm.TerraformState) *terafm.Instance {
