@@ -1,9 +1,9 @@
 package teraform
 
 import (
+	"Savannahtakehomeassi/logger"
 	"bufio"
 	"encoding/json"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -24,7 +24,7 @@ func ParseTerraformInstance(filePath string) (*models.TerraformState, error) {
 		return nil, err
 	}
 
-	log.Print("TerraForm: response is parsed successfully")
+	logger.Info("TerraForm: response is parsed successfully")
 	return &tfState, nil
 }
 
@@ -98,6 +98,6 @@ func ParseHCLConfig(filename string) (*models.TFInstance, error) {
 		return nil, err
 	}
 
-	log.Println("Parsed HCL config file successfully")
+	logger.Info("Parsed HCL config file successfully")
 	return &instance, nil
 }
