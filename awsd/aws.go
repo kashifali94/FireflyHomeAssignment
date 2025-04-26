@@ -1,6 +1,8 @@
 package awsd
 
 import (
+	"Savannahtakehomeassi/awsd/models"
+	"Savannahtakehomeassi/logger"
 	"context"
 	"errors"
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -9,9 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/spf13/viper"
-	"log"
-
-	"Savannahtakehomeassi/awsd/models"
+	"go.uber.org/zap"
 )
 
 type AwsClient struct {
@@ -57,13 +57,13 @@ func GetAWSInstance(awS *AwsClient) (*models.AWSInstance, error) {
 
 	// Check if the instance exists in the response
 	if len(output.Reservations) == 0 || len(output.Reservations[0].Instances) == 0 {
-		log.Print("unable to find the instance")
+		logger.Error("unable to find the instance")
 		return nil, errors.New("no instances found")
 	}
 
 	// Extract instance details
 	i := output.Reservations[0].Instances[0]
-	log.Printf("found the instance: %s", *i.InstanceId)
+	logger.Info("found the", zap.String("instance", *i.InstanceId))
 
 	// Map tags
 	tags := make(map[string]string)
@@ -89,7 +89,7 @@ func GetAWSInstance(awS *AwsClient) (*models.AWSInstance, error) {
 		NetworkInterfaces:   parseNetworkInterfaces(i.NetworkInterfaces),
 	}
 
-	log.Printf("AWS: response is parsed successfully")
+	logger.Info("AWS: response is parsed successfully")
 
 	return awsInstance, nil
 }
