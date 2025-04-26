@@ -1,6 +1,6 @@
 # Savannahtakehomeassi
 
-**Savannahtakehomeassi** is a Go-based project designed to manage and monitor AWS and Terraform configurations. It aims to provide tools for detecting and reporting configuration drift, ensuring that infrastructure remains consistent with the desired state defined in code.
+**Savannahtakehomeassi** is a Go-based project designed to manage and monitor AWS and Terraform configurations. It provides tools for detecting and reporting configuration drift between live AWS resources and their Terraform definitions, ensuring infrastructure remains consistent with the desired state defined in code.
 
 ## 📘 Table of Contents
 - [Project Overview](#project-overview)
@@ -15,9 +15,12 @@
 ## 🛠️ Project Overview
 
 This project provides functionality to:
-- Compare live AWS EC2 instances with the Terraform state.
-- Detect configuration drift automatically at set intervals.
-- Run in a containerized local environment with LocalStack.- Include robust unit testing and modular architecture.
+- Compare live AWS EC2 instances with both Terraform state and HCL configurations
+- Perform concurrent drift checks against multiple sources
+- Implement retry mechanisms for AWS API calls
+- Run in a containerized local environment with LocalStack
+- Include robust unit testing and modular architecture
+- Provide detailed logging of drift detection results
 
 ---
 
@@ -25,12 +28,15 @@ This project provides functionality to:
 
 The project is organized into several key directories:
 
-- **`awsd/`**: Contains AWS-related modules and configurations.
-- **`terraform/`**: Houses Terraform-related modules and configurations.
-- **`main.go`**: The entry point for the application, orchestrating the execution of various modules.
-- **`Makefile`**: Defines build automation tasks, including test binary creation and Docker image building.
-- **`Dockerfile`**: Specifies the steps to build a Docker image for the application.
-- **`docker-compose.yml`**: Defines services and configurations for running the application in a containerized environment.
+- **`awsd/`**: Contains AWS-related modules and configurations
+- **`terraform/`**: Houses Terraform-related modules and configurations
+- **`configuration/`**: Manages application configuration and environment variables
+- **`driftChecker/`**: Contains the core drift detection logic
+- **`logger/`**: Handles application logging
+- **`main.go`**: The entry point for the application, orchestrating the execution of various modules
+- **`Makefile`**: Defines build automation tasks, including test binary creation and Docker image building
+- **`Dockerfile`**: Specifies the steps to build a Docker image for the application
+- **`docker-compose.yml`**: Defines services and configurations for running the application in a containerized environment
 
 ---
 ## 🚀 Getting Started
@@ -44,48 +50,120 @@ Ensure you have the following installed:
 - [Docker Compose](https://docs.docker.com/compose/install/)
 - [Make](https://www.gnu.org/software/make/)
 
-### Building the Application
+### Building and Running the Application
+
+1. Clone the Repository:
+   ```bash
+   git clone <repository-url>
+   cd Savannahtakehomeassi
+   ```
+
+2. Install Dependencies:
+   ```bash
+   go mod tidy
+   ```
+
+3. Build the Application:
+   ```bash
+   make build
+   ```
+
+4. Build Test Binaries:
+   ```bash
+   make build test-binaries
+   ```
+
+5. Start the Environment:
+   ```bash
+   docker-compose up --build -d
+   ```
+
+6. Access the Container:
+   ```bash
+   docker exec -it drift-checker /bin/sh
+   ```
+
+7. Run the Drift Checker:
+   ```bash
+   ./drift-checker
+   ```
+
+8. Run Tests:
+   ```bash
+   cd test-binaries
+   ./<test-binary-name>
+   ```
+
 ---
-To build the application and its test binaries:
 
-### Step to run and installation
-- Clone the Repo
-- **Cd** into **Savannahtakehomeassi** Directory
-- Run **go mod tidy** to resolve any dependency-related issues.
-- Run **make build** command to build the go binary
-- Run **make build test-binaries** command to build the test cases binaries
-- Run **docker-compose up --build -d** command to start the environment. It will create images and appropiate volumes
-- Once everything is running. Run **docker exec -it drift-checker /bin/sh** to get into the container.
-- Wait for few seconds to Run **./drift-checker** command inside the drift  checker container. Terraform takes time few seconds to create the instance.
-- **Cd** into to the **test-binaries** directory. Now run test binary by adding **./** before binary you will see the coverage of the test cases.
+### Design Decisions and Trade-offs
 
----
-
-### Design decisions and trade-offs
-- Leveraged interfaces to enable mock implementations of AWS clients for effective and isolated unit testing.
-- Structured code into domain-specific packages, promoting separation of concerns and improved maintainability.
-- Followed SOLID principles, ensuring a robust, extensible, and testable architecture.
-- Adopted a layered and modular design to enable loose coupling and simplify component reusability.
-- Utilized a .env file for managing environment variables, making configuration more portable and secure.
-- Achieved approximately 80% code coverage, reinforcing confidence in code reliability.
-- Implemented efficient O(n) complexity algorithms for comparing slices (e.g., structs, arrays, strings), optimizing performance.
-- Employed LocalStack to simulate AWS services in a local development environment for faster and safer testing.
-- Chose struct-based JSON parsing over dynamic map[string]interface{} to improve type safety, readability, and reduce runtime errors.
+- Implemented concurrent drift checking against both Terraform state and HCL configurations
+- Added retry mechanism for AWS API calls with configurable attempts and delays
+- Leveraged interfaces to enable mock implementations of AWS clients for effective unit testing
+- Structured code into domain-specific packages, promoting separation of concerns
+- Followed SOLID principles for robust, extensible, and testable architecture
+- Adopted a layered and modular design for loose coupling and component reusability
+- Utilized environment variables for secure configuration management
+- Achieved comprehensive code coverage through unit and integration tests
+- Implemented efficient O(n) complexity algorithms for comparing configurations
+- Employed LocalStack for local AWS service simulation
+- Used structured logging with zap for better observability
 
 ---
 
-### Future improvements
-- Refactor and modularize existing code by introducing additional helper methods to improve clarity and maintainability.
-- Consolidate the testing process by generating a unified test binary that covers the entire project.
-- Integrate AWS resource provisioning within the same container environment, streamlining local setup with LocalStack.
-- Expand the test suite with additional unit and integration tests to enhance coverage and ensure reliability across edge cases.
+### Future Improvements
+
+- Add support for multiple AWS regions and resource types
+- Implement drift remediation capabilities
+- Add web-based dashboard for drift visualization
+- Enhance configuration validation and error handling
+- Implement drift history tracking and reporting
+- Add support for custom drift detection rules
+- Improve performance through caching and optimization
+- Add support for multiple Terraform workspaces
+- Implement drift detection for additional AWS services
 
 ---
 
- ### Usage
- - It is used find the drift between AWS terraform configuration.
- - We us HCL file of terraform for aws instance creation.
- - You can below the example configs
+### Usage
+
+The application continuously monitors for drift between AWS resources and their Terraform definitions. It performs two types of comparisons:
+
+1. AWS vs Terraform State: Compares live AWS instances with the Terraform state file
+2. AWS vs HCL Config: Compares live AWS instances with the Terraform HCL configuration
+
+Drift detection results are logged with detailed information about any discrepancies found.
+
+### Sample Configuration
+
+The application uses a `.env` file for configuration. Here's an example:
+
+```env
+AWS_REGION=us-east-1
+AWS_ACCESS_KEY_ID=test
+AWS_SECRET_ACCESS_KEY=test
+TF_STATE_PATH=/app/tfdata/terraform.tfstate
+MAIN_TF_PATH=/app/terraform/main.tf
+CHECK_INTERVAL=5m
+MAX_RETRIES=3
+RETRY_DELAY=5s
+LOG_LEVEL=info
+```
+
+### Environment Variables
+
+| Variable | Description | Default | Required |
+|----------|-------------|---------|----------|
+| `AWS_REGION` | AWS region to use for API calls | `us-east-1` | Yes |
+| `AWS_ACCESS_KEY_ID` | AWS access key ID | - | Yes |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret access key | - | Yes |
+| `TF_STATE_PATH` | Path to the Terraform state file | `/app/tfdata/terraform.tfstate` | Yes |
+| `MAIN_TF_PATH` | Path to the main Terraform configuration file | `/app/terraform/main.tf` | Yes |
+| `CHECK_INTERVAL` | Interval between drift checks (e.g., "5m", "1h") | `5m` | No |
+| `MAX_RETRIES` | Maximum number of retries for AWS API calls | `3` | No |
+| `RETRY_DELAY` | Delay between retry attempts (e.g., "5s", "1m") | `5s` | No |
+| `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` | No |
 
 ### Sample input Terraform configuration
 ```hcl
@@ -122,7 +200,6 @@ terraform {
   }
 }
 ```
-
 
 ### Sample AWS EC2 response (or mock data)
 ```json
