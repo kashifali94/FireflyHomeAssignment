@@ -1,10 +1,9 @@
 package awsd
 
 import (
-	"Savannahtakehomeassi/awsd/models"
-	"Savannahtakehomeassi/logger"
 	"context"
-	"errors"
+	"fmt"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -12,25 +11,43 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
+
+	"Savannahtakehomeassi/awsd/models"
+	"Savannahtakehomeassi/configuration"
+	"Savannahtakehomeassi/errors"
 )
 
-type AwsClient struct {
+const (
+	packageName = "awsd"
+)
+
+type AWSClient struct {
 	client EC2API
 }
 
-func NewEC2ClientWithConfig(cfg aws.Config) *AwsClient {
-	return &AwsClient{
-		client: ec2.NewFromConfig(cfg),
-	}
-}
+// NewAWSClient creates a new AWS client
+func NewAWSClient(conf *configuration.Config) (*AWSClient, error) {
+	logger := zap.L().With(
+		zap.String("package", packageName),
+		zap.String("function", "NewAWSClient"),
+	)
 
-// NewEC2Client creates and returns a configured EC2 client for local development with LocalStack
-func NewEC2Client() (*AwsClient, error) {
+	// Validate configuration
+	if conf == nil {
+		return nil, fmt.Errorf("configuration cannot be nil")
+	}
+
+	if conf.AWSRegion == "" {
+		return nil, fmt.Errorf("AWS region cannot be empty")
+	}
+
+	if conf.AccessSecret == "" || conf.AcessKeyID == "" {
+		return nil, fmt.Errorf("AWS credentials cannot be empty")
+	}
 
 	cfg, err := config.LoadDefaultConfig(context.TODO(),
-		config.WithRegion(viper.GetString("AWS_REGION")),
-		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(viper.GetString("AWS_SECRET_ACCESS_KEY"),
-			viper.GetString("AWS_ACCESS_KEY_ID"), "")),
+		config.WithRegion(conf.AWSRegion),
+		config.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(conf.AccessSecret, conf.AcessKeyID, "")),
 		config.WithEndpointResolver(aws.EndpointResolverFunc(
 			func(service, region string) (aws.Endpoint, error) {
 				return aws.Endpoint{URL: viper.GetString("LOCALSTACK_URL"), SigningRegion: region}, nil
@@ -38,32 +55,50 @@ func NewEC2Client() (*AwsClient, error) {
 		),
 	)
 	if err != nil {
+		logger.Error("Failed to create AWS client",
+			zap.String("operation", "client_creation"),
+			zap.Error(err),
+		)
 		return nil, err
 	}
 
-	return NewEC2ClientWithConfig(cfg), nil
+	logger.Info("AWS client created successfully")
+	return &AWSClient{
+		client: ec2.NewFromConfig(cfg),
+	}, nil
 }
 
 // GetAWSInstance fetches AWS EC2 instance details
-func GetAWSInstance(awS *AwsClient) (*models.AWSInstance, error) {
+func (c *AWSClient) GetAWSInstance() (*models.AWSInstance, error) {
+	logger := zap.L().With(
+		zap.String("package", packageName),
+		zap.String("function", "GetAWSInstance"),
+	)
+
 	// Describe the instance
-	output, err := awS.client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
+	output, err := c.client.DescribeInstances(context.TODO(), &ec2.DescribeInstancesInput{
 		InstanceIds: []string{},
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, errors.New(errors.ErrAWSInstance, "failed to describe instances",
+			map[string]interface{}{
+				"operation": "describe_instances",
+			}, err)
 	}
 
 	// Check if the instance exists in the response
 	if len(output.Reservations) == 0 || len(output.Reservations[0].Instances) == 0 {
-		logger.Error("unable to find the instance")
-		return nil, errors.New("no instances found")
+		logger.Error("No instances found")
+		return nil, errors.New(errors.ErrAWSInstance, "no instances found",
+			map[string]interface{}{
+				"operation": "instance_lookup",
+			}, nil)
 	}
 
 	// Extract instance details
 	i := output.Reservations[0].Instances[0]
-	logger.Info("found the", zap.String("instance", *i.InstanceId))
+	logger.Info("Instance found", zap.String("instance_id", *i.InstanceId))
 
 	// Map tags
 	tags := make(map[string]string)
@@ -78,8 +113,8 @@ func GetAWSInstance(awS *AwsClient) (*models.AWSInstance, error) {
 		InstanceID:          *i.InstanceId,
 		InstanceType:        string(i.InstanceType),
 		AMI:                 *i.ImageId,
-		PrivateIP:           aws.ToString(i.PrivateIpAddress), // Safely dereferencing pointer
-		KeyName:             aws.ToString(i.KeyName),          // Safely dereferencing pointer
+		PrivateIP:           aws.ToString(i.PrivateIpAddress),
+		KeyName:             aws.ToString(i.KeyName),
 		Tags:                tags,
 		PublicIP:            aws.ToString(i.PublicIpAddress),
 		LaunchTime:          i.LaunchTime.String(),
@@ -89,8 +124,10 @@ func GetAWSInstance(awS *AwsClient) (*models.AWSInstance, error) {
 		NetworkInterfaces:   parseNetworkInterfaces(i.NetworkInterfaces),
 	}
 
-	logger.Info("AWS: response is parsed successfully")
-
+	logger.Info("AWS instance details parsed successfully",
+		zap.String("instance_id", awsInstance.InstanceID),
+		zap.String("instance_type", awsInstance.InstanceType),
+	)
 	return awsInstance, nil
 }
 
@@ -98,6 +135,9 @@ func GetAWSInstance(awS *AwsClient) (*models.AWSInstance, error) {
 func parseBlockDeviceMappings(mappings []types.InstanceBlockDeviceMapping) []models.BlockDeviceMapping {
 	result := make([]models.BlockDeviceMapping, 0)
 	for _, mapping := range mappings {
+		if mapping.DeviceName == nil || mapping.Ebs == nil || mapping.Ebs.VolumeId == nil {
+			continue
+		}
 		result = append(result, models.BlockDeviceMapping{
 			DeviceName: *mapping.DeviceName,
 			VolumeId:   *mapping.Ebs.VolumeId,
@@ -110,6 +150,9 @@ func parseBlockDeviceMappings(mappings []types.InstanceBlockDeviceMapping) []mod
 func parseSecurityGroups(groups []types.GroupIdentifier) []models.SecurityGroup {
 	result := make([]models.SecurityGroup, 0)
 	for _, group := range groups {
+		if group.GroupId == nil {
+			continue
+		}
 		result = append(result, models.SecurityGroup{
 			GroupId: *group.GroupId,
 		})
@@ -121,10 +164,16 @@ func parseSecurityGroups(groups []types.GroupIdentifier) []models.SecurityGroup 
 func parseNetworkInterfaces(interfaces []types.InstanceNetworkInterface) []models.NetworkInterface {
 	result := make([]models.NetworkInterface, 0)
 	for _, iface := range interfaces {
-		result = append(result, models.NetworkInterface{
+		if iface.PrivateIpAddress == nil {
+			continue
+		}
+		ni := models.NetworkInterface{
 			PrivateIpAddress: *iface.PrivateIpAddress,
-			PublicIpAddress:  *iface.Association.PublicIp,
-		})
+		}
+		if iface.Association != nil && iface.Association.PublicIp != nil {
+			ni.PublicIpAddress = *iface.Association.PublicIp
+		}
+		result = append(result, ni)
 	}
 	return result
 }
