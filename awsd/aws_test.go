@@ -12,17 +12,71 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"Savannahtakehomeassi/awsd/models"
+	"Savannahtakehomeassi/configuration"
 )
 
+func TestNewAWSClient(t *testing.T) {
+	tests := []struct {
+		name        string
+		config      *configuration.Config
+		expectError bool
+	}{
+		{
+			name: "Valid Configuration",
+			config: &configuration.Config{
+				AWSRegion:    "us-west-2",
+				AccessSecret: "test-secret",
+				AcessKeyID:   "test-key",
+			},
+			expectError: false,
+		},
+		{
+			name: "Empty Region",
+			config: &configuration.Config{
+				AWSRegion:    "",
+				AccessSecret: "test-secret",
+				AcessKeyID:   "test-key",
+			},
+			expectError: true,
+		},
+		{
+			name: "Empty Credentials",
+			config: &configuration.Config{
+				AWSRegion:    "us-west-2",
+				AccessSecret: "",
+				AcessKeyID:   "",
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewAWSClient(tt.config)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, client)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, client)
+				assert.NotNil(t, client.client)
+			}
+		})
+	}
+}
+
 func TestGetAWSInstance(t *testing.T) {
+	now := time.Now()
 	tests := []struct {
 		name        string
 		mockOutput  *ec2.DescribeInstancesOutput
 		mockError   error
 		expectError bool
+		validate    func(t *testing.T, instance *models.AWSInstance)
 	}{
 		{
-			name: "Success Case",
+			name: "Success Case - Complete Instance",
 			mockOutput: &ec2.DescribeInstancesOutput{
 				Reservations: []types.Reservation{
 					{
@@ -35,9 +89,10 @@ func TestGetAWSInstance(t *testing.T) {
 								KeyName:          aws.String("test-key"),
 								PublicIpAddress:  aws.String("54.0.0.1"),
 								PrivateDnsName:   aws.String("ip-10-0-0-1.ec2.internal"),
-								LaunchTime:       aws.Time(time.Now()),
+								LaunchTime:       aws.Time(now),
 								Tags: []types.Tag{
 									{Key: aws.String("Name"), Value: aws.String("test-instance")},
+									{Key: aws.String("Environment"), Value: aws.String("prod")},
 								},
 								BlockDeviceMappings: []types.InstanceBlockDeviceMapping{
 									{
@@ -49,6 +104,7 @@ func TestGetAWSInstance(t *testing.T) {
 								},
 								SecurityGroups: []types.GroupIdentifier{
 									{GroupId: aws.String("sg-1234")},
+									{GroupId: aws.String("sg-5678")},
 								},
 								NetworkInterfaces: []types.InstanceNetworkInterface{
 									{
@@ -64,10 +120,31 @@ func TestGetAWSInstance(t *testing.T) {
 				},
 			},
 			expectError: false,
+			validate: func(t *testing.T, instance *models.AWSInstance) {
+				assert.Equal(t, "i-1234567890abcdef0", instance.InstanceID)
+				assert.Equal(t, "t2.micro", instance.InstanceType)
+				assert.Equal(t, "ami-123", instance.AMI)
+				assert.Equal(t, "10.0.0.1", instance.PrivateIP)
+				assert.Equal(t, "test-key", instance.KeyName)
+				assert.Equal(t, "54.0.0.1", instance.PublicIP)
+				assert.Equal(t, "ip-10-0-0-1.ec2.internal", instance.PrivateDnsName)
+				assert.Equal(t, now.String(), instance.LaunchTime)
+				assert.Len(t, instance.Tags, 2)
+				assert.Equal(t, "test-instance", instance.Tags["Name"])
+				assert.Equal(t, "prod", instance.Tags["Environment"])
+				assert.Len(t, instance.BlockDeviceMappings, 1)
+				assert.Len(t, instance.SecurityGroups, 2)
+				assert.Len(t, instance.NetworkInterfaces, 1)
+			},
 		},
 		{
 			name:        "Empty Reservations",
 			mockOutput:  &ec2.DescribeInstancesOutput{Reservations: []types.Reservation{}},
+			expectError: true,
+		},
+		{
+			name:        "Empty Instances",
+			mockOutput:  &ec2.DescribeInstancesOutput{Reservations: []types.Reservation{{Instances: []types.Instance{}}}},
 			expectError: true,
 		},
 		{
@@ -85,17 +162,18 @@ func TestGetAWSInstance(t *testing.T) {
 				},
 			}
 
-			client := &AwsClient{client: mockClient}
-			instance, err := GetAWSInstance(client)
+			client := &AWSClient{client: mockClient}
+			instance, err := client.GetAWSInstance()
 
-			if tt.expectError && err == nil {
-				t.Errorf("expected error but got nil")
-			}
-			if !tt.expectError && err != nil {
-				t.Errorf("unexpected error: %v", err)
-			}
-			if !tt.expectError && instance == nil {
-				t.Errorf("expected instance but got nil")
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Nil(t, instance)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, instance)
+				if tt.validate != nil {
+					tt.validate(t, instance)
+				}
 			}
 		})
 	}
@@ -117,8 +195,28 @@ func TestParseSecurityGroups(t *testing.T) {
 			},
 		},
 		{
+			name: "multiple groups",
+			input: []types.GroupIdentifier{
+				{GroupId: str("sg-abc123")},
+				{GroupId: str("sg-def456")},
+				{GroupId: str("sg-ghi789")},
+			},
+			output: []models.SecurityGroup{
+				{GroupId: "sg-abc123"},
+				{GroupId: "sg-def456"},
+				{GroupId: "sg-ghi789"},
+			},
+		},
+		{
 			name:   "empty list",
 			input:  []types.GroupIdentifier{},
+			output: []models.SecurityGroup{},
+		},
+		{
+			name: "nil group ID",
+			input: []types.GroupIdentifier{
+				{GroupId: nil},
+			},
 			output: []models.SecurityGroup{},
 		},
 	}
@@ -150,8 +248,35 @@ func TestParseBlockDeviceMappings(t *testing.T) {
 			},
 		},
 		{
+			name: "multiple devices",
+			input: []types.InstanceBlockDeviceMapping{
+				{
+					DeviceName: str("/dev/sda1"),
+					Ebs:        &types.EbsInstanceBlockDevice{VolumeId: str("vol-12345")},
+				},
+				{
+					DeviceName: str("/dev/sdb"),
+					Ebs:        &types.EbsInstanceBlockDevice{VolumeId: str("vol-67890")},
+				},
+			},
+			expected: []models.BlockDeviceMapping{
+				{DeviceName: "/dev/sda1", VolumeId: "vol-12345"},
+				{DeviceName: "/dev/sdb", VolumeId: "vol-67890"},
+			},
+		},
+		{
 			name:     "empty device list",
 			input:    []types.InstanceBlockDeviceMapping{},
+			expected: []models.BlockDeviceMapping{},
+		},
+		{
+			name: "nil EBS volume",
+			input: []types.InstanceBlockDeviceMapping{
+				{
+					DeviceName: str("/dev/sda1"),
+					Ebs:        nil,
+				},
+			},
 			expected: []models.BlockDeviceMapping{},
 		},
 	}
@@ -188,9 +313,51 @@ func TestParseNetworkInterfaces(t *testing.T) {
 			},
 		},
 		{
+			name: "Multiple interfaces",
+			input: []types.InstanceNetworkInterface{
+				{
+					PrivateIpAddress: str("10.0.0.1"),
+					Association: &types.InstanceNetworkInterfaceAssociation{
+						PublicIp: str("54.1.2.3"),
+					},
+				},
+				{
+					PrivateIpAddress: str("10.0.0.2"),
+					Association: &types.InstanceNetworkInterfaceAssociation{
+						PublicIp: str("54.1.2.4"),
+					},
+				},
+			},
+			expected: []models.NetworkInterface{
+				{
+					PrivateIpAddress: "10.0.0.1",
+					PublicIpAddress:  "54.1.2.3",
+				},
+				{
+					PrivateIpAddress: "10.0.0.2",
+					PublicIpAddress:  "54.1.2.4",
+				},
+			},
+		},
+		{
 			name:     "Empty interfaces",
 			input:    []types.InstanceNetworkInterface{},
 			expected: []models.NetworkInterface{},
+		},
+		{
+			name: "Nil association",
+			input: []types.InstanceNetworkInterface{
+				{
+					PrivateIpAddress: str("10.0.0.1"),
+					Association:      nil,
+				},
+			},
+			expected: []models.NetworkInterface{
+				{
+					PrivateIpAddress: "10.0.0.1",
+					PublicIpAddress:  "",
+				},
+			},
 		},
 	}
 
