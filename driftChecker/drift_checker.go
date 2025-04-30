@@ -35,6 +35,8 @@ func (s *DriftService) RunLoop(ctx context.Context, tfSpath, mainfile string, in
 		zap.String("package", "driftChecker"),
 		zap.String("function", "RunLoop"),
 		zap.Int("interval_seconds", interval),
+		zap.String("tf_state_path", tfSpath),
+		zap.String("main_tf_path", mainfile),
 	)
 
 	logger.Info("Starting drift checker loop",
@@ -46,7 +48,10 @@ func (s *DriftService) RunLoop(ctx context.Context, tfSpath, mainfile string, in
 
 	// First run immediately
 	if err := s.runDriftCheck(ctx, tfSpath, mainfile); err != nil {
-		return err
+		return errors.New(errors.ErrDriftChecker, "Initial drift check failed",
+			map[string]interface{}{
+				"operation": "initial_drift_check",
+			}, err)
 	}
 
 	for {
@@ -58,7 +63,10 @@ func (s *DriftService) RunLoop(ctx context.Context, tfSpath, mainfile string, in
 			return nil
 		case <-ticker.C:
 			if err := s.runDriftCheck(ctx, tfSpath, mainfile); err != nil {
-				return err
+				return errors.New(errors.ErrDriftChecker, "Periodic drift check failed",
+					map[string]interface{}{
+						"operation": "periodic_drift_check",
+					}, err)
 			}
 		}
 	}
@@ -69,6 +77,12 @@ func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile strin
 	logger := s.logger.With(
 		zap.String("package", "driftChecker"),
 		zap.String("function", "runDriftCheck"),
+		zap.String("tf_state_path", tfPath),
+		zap.String("main_tf_path", mainFile),
+	)
+
+	logger.Info("Starting drift check iteration",
+		zap.String("operation", "drift_check_start"),
 	)
 
 	// Get AWS instance details
@@ -76,29 +90,49 @@ func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile strin
 	if err != nil {
 		logger.Error("Failed to get AWS instance details",
 			zap.String("operation", "get_aws_instance"),
-			zap.Error(err),
+			zap.Error(errors.New(errors.ErrAWSInstance, "Failed to get AWS instance",
+				map[string]interface{}{
+					"operation": "get_aws_instance",
+				}, err)),
 		)
 		return err
 	}
+	logger.Info("Successfully retrieved AWS instance details",
+		zap.String("operation", "get_aws_instance"),
+		zap.String("instance_id", awsInstance.InstanceID),
+	)
 
 	tfState, err := s.terraformClient.ParseTerraformInstance(tfPath)
-
 	if err != nil {
-		return errors.New(errors.ErrTerraformState, "Failed to parse Terraform state",
-			map[string]interface{}{
-				"operation": "terraform_state_parse",
-				"path":      tfPath,
-			}, err)
+		logger.Error("Failed to parse Terraform state",
+			zap.String("operation", "terraform_state_parse"),
+			zap.Error(errors.New(errors.ErrTerraformState, "Failed to parse Terraform state",
+				map[string]interface{}{
+					"operation": "terraform_state_parse",
+					"path":      tfPath,
+				}, err)),
+		)
+		return err
 	}
+	logger.Info("Successfully parsed Terraform state",
+		zap.String("operation", "terraform_state_parse"),
+	)
 
 	tfConfig, err := s.terraformClient.ParseHCLConfig(mainFile)
 	if err != nil {
-		return errors.New(errors.ErrTerraformConfig, "Failed to parse HCL config",
-			map[string]interface{}{
-				"operation": "hcl_config_parse",
-				"path":      mainFile,
-			}, err)
+		logger.Error("Failed to parse HCL config",
+			zap.String("operation", "hcl_config_parse"),
+			zap.Error(errors.New(errors.ErrTerraformConfig, "Failed to parse HCL config",
+				map[string]interface{}{
+					"operation": "hcl_config_parse",
+					"path":      mainFile,
+				}, err)),
+		)
+		return err
 	}
+	logger.Info("Successfully parsed HCL config",
+		zap.String("operation", "hcl_config_parse"),
+	)
 
 	// Channels for collecting results
 	type result struct {
@@ -150,6 +184,10 @@ func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile strin
 	// Handle results safely
 	for res := range results {
 		if res.err != nil {
+			logger.Error("Drift check failed",
+				zap.String("operation", "drift_check"),
+				zap.Error(res.err),
+			)
 			return res.err
 		}
 
@@ -167,7 +205,7 @@ func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile strin
 		}
 	}
 
-	logger.Info("Drift check completed",
+	logger.Info("Drift check completed successfully",
 		zap.String("operation", "drift_check_complete"),
 	)
 	return nil
