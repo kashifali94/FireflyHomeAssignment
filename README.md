@@ -307,5 +307,27 @@ terraform {
 }
 ```
 
+### Sample Output of drift Checker tool 
+```
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Starting drift check iteration  {"package": "main", "operation": "drift_check_start"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:72        Instance found  {"package": "awsd", "function": "GetAWSInstance", "instance_id": "i-19e514ba6ac43ab0e"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:72        AWS instance details parsed successfully        {"package": "awsd", "function": "GetAWSInstance", "instance_id": "i-19e514ba6ac43ab0e", "instance_type": "t2.micro"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Successfully retrieved AWS instance details     {"package": "main", "operation": "get_aws_instance", "instance_id": "i-19e514ba6ac43ab0e"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:88        Terraform state parsed successfully     {"package": "teraform", "function": "ParseTerraformInstance", "file_path": "/app/shared/terraform.tfstate", "operation": "state_parse"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Successfully parsed Terraform state     {"package": "main", "operation": "terraform_state_parse"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:104       HCL config parsed successfully  {"package": "teraform", "function": "ParseHCLConfig", "file_path": "/app/terraform/main.tf", "operation": "config_parse", "ami": "ami-123456789", "instance_type": "t3.micro"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Successfully parsed HCL config  {"package": "main", "operation": "hcl_config_parse"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:141       Starting AWS-Terraform comparison       {"function": "compareAWSInstanceWithTerraform", "instance_id": "i-19e514ba6ac43ab0e", "operation": "comparison_start"}
+2025-05-04 19:00:33     INFO    driftChecker/helper.go:27       Found matching Terraform instance       {"function": "findMatchingTFInstance", "operation": "instance_match", "resource_type": "aws_instance"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:157       Starting HCL comparison {"function": "compareInstances", "instance_id": "i-19e514ba6ac43ab0e", "operation": "hcl_comparison_start"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:157       Instance type drift detected    {"function": "compareInstances", "instance_id": "i-19e514ba6ac43ab0e", "operation": "hcl_comparison", "aws_type": "t2.micro", "tf_type": "t3.micro"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:157       AMI drift detected      {"function": "compareInstances", "instance_id": "i-19e514ba6ac43ab0e", "operation": "hcl_comparison", "aws_ami": "ami-12345678", "tf_ami": "ami-123456789"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:157       Tag drift detected      {"function": "compareInstances", "instance_id": "i-19e514ba6ac43ab0e", "operation": "hcl_comparison", "tag_key": "Name", "aws_value": "", "tf_value": "TestInstance"}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:157       Drift detected in HCL comparison        {"function": "compareInstances", "instance_id": "i-19e514ba6ac43ab0e", "operation": "hcl_comparison_complete", "status": "drift_detected", "drift_count": 3}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Drift detected between AWS and Terraform        {"package": "main", "operation": "drift_check", "status": "drift_detected", "drifts": ["Drift in instance i-19e514ba6ac43ab0e: instance_type mismatch (AWS: t2.micro, TF: t3.micro)", "Drift in instance i-19e514ba6ac43ab0e: AMI mismatch (AWS: ami-12345678, TF: ami-123456789)", "Drift in instance i-19e514ba6ac43ab0e: tag Name mismatch (AWS: , TF: TestInstance)"]}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:141       Comparison completed    {"function": "compareAWSInstanceWithTerraform", "instance_id": "i-19e514ba6ac43ab0e", "operation": "comparison_complete", "drift_count": 4}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Drift detected between AWS and Terraform        {"package": "main", "operation": "drift_check", "status": "drift_detected", "drifts": ["Root block device volume ID drift detected: AWS=vol-9be38b8a712c3ca39, TF=vol-2ee6dbecb6d63dd43", "Tag drift detected: Name (AWS: , TF: TestInstance)", "Private IP drift detected: AWS=10.216.39.109, TF=10.249.67.6", "Public IP drift detected: AWS=54.214.102.145, TF=54.214.227.242"]}
+2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Drift check completed successfully      {"package": "main", "operation": "drift_check_complete"}
 
+```
 
