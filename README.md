@@ -167,7 +167,7 @@ LOG_LEVEL=info
 | `LOG_LEVEL` | Logging level (debug, info, warn, error) | `info` | No |
 
 
-### Drift Tool Output 
+### DriftTool Output 
 ```
 2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:55        Starting drift check iteration  {"package": "main", "operation": "drift_check_start"}
 2025-05-04 19:00:33     INFO    driftChecker/drift_checker.go:72        Instance found  {"package": "awsd", "function": "GetAWSInstance", "instance_id": "i-19e514ba6ac43ab0e"}
