@@ -29,6 +29,7 @@ func NewDriftService(awsClient AWSClient, terraformClient TerraformClient, logge
 	}
 }
 
+// DriftService already has a logger instance use it
 // RunLoop runs the drift checking loop
 func (s *DriftService) RunLoop(ctx context.Context, tfSpath, mainfile string, interval int) error {
 	logger := s.logger.With(
@@ -72,6 +73,7 @@ func (s *DriftService) RunLoop(ctx context.Context, tfSpath, mainfile string, in
 	}
 }
 
+// DriftService already has a logger instance use it
 // runDriftCheck performs a single drift check iteration
 func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile string) error {
 	logger := s.logger.With(
@@ -134,6 +136,7 @@ func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile strin
 		zap.String("operation", "hcl_config_parse"),
 	)
 
+	// define this struct outside of the function
 	// Channels for collecting results
 	type result struct {
 		drift []string
@@ -211,6 +214,7 @@ func (s *DriftService) runDriftCheck(ctx context.Context, tfPath, mainFile strin
 	return nil
 }
 
+// consider moving this to a separate file
 func compareAWSInstanceWithTerraform(ctx context.Context, awsInstance *awsm.AWSInstance, tfState *terafm.TerraformState) ([]string, error) {
 	logger := zap.L().With(
 		zap.String("function", "compareAWSInstanceWithTerraform"),
@@ -280,6 +284,7 @@ func compareAWSInstanceWithTerraform(ctx context.Context, awsInstance *awsm.AWSI
 	}
 }
 
+// also move the to the same file as above
 // compareInstances for aws and tfInstance for hcl
 func compareInstances(awsInst *awsm.AWSInstance, tfInst *terafm.TFInstance) ([]string, error) {
 	logger := zap.L().With(
@@ -347,6 +352,7 @@ func compareInstances(awsInst *awsm.AWSInstance, tfInst *terafm.TFInstance) ([]s
 	return drifts, nil
 }
 
+// move this to a separate file
 func findMatchingTFInstance(tfState *terafm.TerraformState) *terafm.Instance {
 	logger := zap.L().With(
 		zap.String("function", "findMatchingTFInstance"),

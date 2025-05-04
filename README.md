@@ -306,6 +306,6 @@ terraform {
     ]
 }
 ```
-
+// also show the drift checker output
 
 
