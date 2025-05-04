@@ -21,6 +21,11 @@ const (
 	packageName = "main"
 )
 
+// re organise your folder structure
+// move main to cmd
+// move the right files to internal
+// move the right files to pkg
+
 func main() {
 	// Initialize logger
 	if err := logger.Initialize("info"); err != nil {
